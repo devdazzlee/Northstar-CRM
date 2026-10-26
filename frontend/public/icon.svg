@@ -1,0 +1,23 @@
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ns-bg" x1="22" y1="12" x2="158" y2="168" gradientUnits="userSpaceOnUse">
+      <stop stopColor="#818CF8"/>
+      <stop offset="0.55" stopColor="#4F46E5"/>
+      <stop offset="1" stopColor="#3730A3"/>
+    </linearGradient>
+  </defs>
+  <rect width="180" height="180" rx="44" fill="url(#ns-bg)"/>
+  <path d="M50 20C68 12 112 12 130 20C104 30 76 30 50 20Z" fill="white" fill-opacity="0.18"/>
+  <!-- Geometric N -->
+  <path
+    fill-rule="evenodd"
+    clip-rule="evenodd"
+    d="M48 132V48h19l39 57.5V48h21v84h-19L69 74.5V132H48Z"
+    fill="white"
+  />
+  <!-- North star beacon -->
+  <path
+    d="M124.5 28L128.7 40L141 44.2L128.7 48.4L124.5 60.4L120.3 48.4L108 44.2L120.3 40Z"
+    fill="#C7D2FE"
+  />
+</svg>
