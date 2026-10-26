@@ -1,31 +1,231 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Bell, Bot, Check, ChevronRight, CircleHelp, Command, Hash, Menu, MessageCircle, Search, Send, Sparkles, X, Zap } from 'lucide-react'
+import { useState } from 'react'
+import {
+  Bot,
+  Check,
+  Menu,
+  MessageCircle,
+  Send,
+  X,
+  Zap,
+} from 'lucide-react'
+import { useDealsQuery, useLeadsQuery, useNotificationsQuery, useTasksQuery } from '@/hooks/use-crm-queries'
+import type { UiDeal, UiTask } from '@/lib/api/mappers'
+import type { Lead, WorkspaceNotification } from '@/lib/types'
 
 type Notify = (message: string) => void
 
 const panel = 'rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900'
-const button = 'rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold transition hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700'
 
-export function AIAssistant({ open, onClose, notify }: { open: boolean; onClose: () => void; notify: Notify }) {
-  const [prompt, setPrompt] = useState('')
-  const [messages, setMessages] = useState([{ role: 'assistant', text: 'I can help you move work forward. Ask about a record, pipeline, or next action.' }])
-  if (!open) return null
-  const ask = () => { if (!prompt.trim()) return; setMessages((current) => [...current, { role: 'user', text: prompt }, { role: 'assistant', text: 'Based on your workspace, the next best action is to follow up with the highest-value stale deals and confirm the close date.' }]); setPrompt('') }
-  return <aside aria-label="AI assistant" className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[400px] flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"><div className="flex items-center gap-3 border-b border-slate-200 p-5 dark:border-slate-800"><div className="flex size-9 items-center justify-center rounded-xl bg-indigo-600 text-white"><Sparkles className="size-4" /></div><div className="flex-1"><p className="text-sm font-semibold">Northstar AI</p><p className="text-xs text-slate-500">Workspace copilot</p></div><button aria-label="Close AI assistant" onClick={onClose}><X className="size-4 text-slate-400" /></button></div><div className="grid grid-cols-2 gap-2 p-4">{['Draft email','Summarize record','Next best action','Explain lead score','Call script','Similar deals'].map((action) => <button key={action} onClick={() => { setPrompt(action); notify(`${action} ready`) }} className="rounded-lg bg-slate-50 p-2.5 text-left text-[11px] font-medium dark:bg-slate-900">{action}</button>)}</div><div className="flex-1 space-y-3 overflow-y-auto p-4">{messages.map((message, index) => <div key={index} className={message.role === 'user' ? 'ml-8 rounded-xl bg-indigo-600 p-3 text-xs text-white' : 'mr-6 rounded-xl bg-slate-100 p-3 text-xs leading-5 dark:bg-slate-900'}>{message.text}</div>)}</div><div className="border-t border-slate-200 p-4 dark:border-slate-800"><div className="flex items-end gap-2 rounded-xl border border-slate-200 p-2 dark:border-slate-700"><textarea aria-label="Ask AI" value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); ask() } }} placeholder="Ask anything..." className="min-h-10 flex-1 resize-none bg-transparent p-1 text-xs outline-none" /><button aria-label="Send AI prompt" onClick={ask} className="rounded-lg bg-indigo-600 p-2 text-white"><Send className="size-3.5" /></button></div></div></aside>
+function aiReply(
+  prompt: string,
+  deals: UiDeal[],
+  leads: Lead[],
+  tasks: UiTask[],
+  notifications: WorkspaceNotification[],
+) {
+  const text = prompt.toLowerCase()
+  const topDeals = [...deals]
+    .sort((a, b) => (b.probability ?? 0) - (a.probability ?? 0))
+    .slice(0, 3)
+  const topLeads = [...leads].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 3)
+  const openTasks = tasks.filter((task) => String(task.status).toLowerCase() !== 'done').slice(0, 3)
+  const unread = notifications.filter((item) => !item.read).slice(0, 3)
+  const dealLine = (deal: UiDeal) => `${deal.name} (${deal.stage}, ${deal.probability}%, ${deal.amount})`
+  const leadLine = (lead: Lead) => `${lead.name} · score ${lead.score} · ${lead.status}`
+  const taskLine = (task: UiTask) => `${task.title} · ${task.due} · ${task.priority}`
+
+  if (text.includes('email') || text.includes('draft')) {
+    const target = topDeals[0]?.company || topLeads[0]?.company || 'there'
+    return {
+      reply: `Draft ready:\n\nHi ${target} — following up on our conversation. Based on your timeline, I recommend we schedule a 20-minute review this week to confirm scope and next steps.\n\nBest`,
+      navigate: 'Email templates',
+    }
+  }
+  if (text.includes('summarize') || text.includes('summary')) {
+    const focus = topDeals[0]
+    return {
+      reply: focus
+        ? `Summary from live pipeline: ${dealLine(focus)}. Open tasks: ${openTasks.length}. Unread alerts: ${unread.length}.`
+        : 'No deals loaded yet — open Deals after the API finishes loading.',
+      navigate: 'Deals',
+    }
+  }
+  if (text.includes('next best') || text.includes('action') || text.includes('task')) {
+    const dealPart = topDeals.length
+      ? `Deals:\n${topDeals.map((d, i) => `${i + 1}) ${dealLine(d)}`).join('\n')}`
+      : 'No open deals.'
+    const taskPart = openTasks.length
+      ? `Tasks:\n${openTasks.map((t, i) => `${i + 1}) ${taskLine(t)}`).join('\n')}`
+      : 'No open tasks.'
+    return { reply: `${dealPart}\n\n${taskPart}`, navigate: openTasks.length ? 'Tasks' : 'Deals' }
+  }
+  if (text.includes('score') || text.includes('lead')) {
+    return {
+      reply: topLeads.length
+        ? `Lead scoring from live data:\n${topLeads.map((l, i) => `${i + 1}) ${leadLine(l)}`).join('\n')}`
+        : 'No leads loaded yet from the API.',
+      navigate: 'Leads',
+    }
+  }
+  if (text.includes('notif')) {
+    return {
+      reply: unread.length
+        ? `Unread notifications:\n${unread.map((n, i) => `${i + 1}) ${n.text}`).join('\n')}`
+        : 'No unread notifications.',
+      navigate: 'Dashboard',
+    }
+  }
+  if (text.includes('call') || text.includes('script')) {
+    return {
+      reply:
+        'Call script:\n1) Confirm current tools and pain\n2) Share one relevant customer outcome\n3) Ask for decision timeline\n4) Book a technical follow-up',
+      navigate: 'Calling',
+    }
+  }
+  if (text.includes('similar') || text.includes('deal')) {
+    return {
+      reply: topDeals.length
+        ? `Similar / high-probability deals:\n${topDeals.map((d) => `• ${dealLine(d)}`).join('\n')}`
+        : 'No deals available to compare yet.',
+      navigate: 'Deals',
+    }
+  }
+  return {
+    reply: `Got it — “${prompt.trim()}”. Live workspace: ${deals.length} deals, ${leads.length} leads, ${openTasks.length} open tasks, ${unread.length} unread alerts.`,
+    navigate: 'Dashboard',
+  }
 }
 
-export function OnboardingChecklist({ notify }: { notify: Notify }) { const [done, setDone] = useState(['connect email']); const items = ['Import data','Connect email','Invite team','Create pipeline']; return <section className={`${panel} mx-5 mt-5 border-l-4 border-l-blue-600 p-5 lg:mx-8`}><div className="flex items-center gap-3"><div className="flex-1"><p className="text-sm font-semibold text-slate-900 dark:text-white">Get your workspace ready</p><p className="mt-1 text-xs text-slate-500">{done.length} of {items.length} setup steps complete</p></div><span className="text-sm font-bold text-blue-700 dark:text-blue-300">{Math.round(done.length / items.length * 100)}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${done.length / items.length * 100}%` }} /></div><div className="mt-4 grid gap-2 sm:grid-cols-4">{items.map((item) => <button key={item} onClick={() => { setDone((current) => current.includes(item) ? current : [...current, item]); notify(`${item} checklist step opened`) }} className="flex items-center gap-2 rounded-lg bg-slate-50 p-2.5 text-left text-xs transition hover:bg-blue-50 dark:bg-slate-800 dark:hover:bg-blue-950/30"><span className={`flex size-5 items-center justify-center rounded-full ${done.includes(item) ? 'bg-emerald-500 text-white' : 'border border-slate-300 dark:border-slate-600'}`}>{done.includes(item) && <Check className="size-3" />}</span>{item}</button>)}</div></section> }
+export function AIAssistant({
+  open,
+  onClose,
+  notify,
+  onNavigate,
+}: {
+  open: boolean
+  onClose: () => void
+  notify: Notify
+  onNavigate?: (view: string) => void
+}) {
+  const [prompt, setPrompt] = useState('')
+  const [messages, setMessages] = useState([
+    { role: 'assistant', text: 'I can help you move work forward. Ask about a record, pipeline, or next action.' },
+  ])
+  const [lastNavigate, setLastNavigate] = useState('Dashboard')
+  const dealsQuery = useDealsQuery()
+  const leadsQuery = useLeadsQuery()
+  const tasksQuery = useTasksQuery()
+  const notificationsQuery = useNotificationsQuery()
+  if (!open) return null
+  const deals = dealsQuery.data ?? []
+  const leads = leadsQuery.data ?? []
+  const tasks = tasksQuery.data ?? []
+  const notifications = notificationsQuery.data ?? []
+  const ask = (value = prompt) => {
+    if (!value.trim()) return
+    const result = aiReply(value, deals, leads, tasks, notifications)
+    setLastNavigate(result.navigate)
+    setMessages((current) => [...current, { role: 'user', text: value }, { role: 'assistant', text: result.reply }])
+    setPrompt('')
+    notify('AI response ready')
+  }
+  return (
+    <aside aria-label="AI assistant" className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[400px] flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex items-center gap-3 border-b border-slate-200 p-5 dark:border-slate-800">
+        <div className="flex size-9 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900"><Bot className="size-4" /></div>
+        <div className="flex-1"><p className="text-sm font-semibold">Northstar AI</p><p className="text-xs text-slate-500">Workspace copilot</p></div>
+        <button aria-label="Close AI assistant" onClick={onClose}><X className="size-4 text-slate-400" /></button>
+      </div>
+      <div className="grid grid-cols-2 gap-2 p-4">
+        {['Draft email', 'Summarize record', 'Next best action', 'Explain lead score', 'Call script', 'Similar deals'].map((action) => (
+          <button key={action} onClick={() => ask(action)} className="rounded-lg bg-slate-50 p-2.5 text-left text-[11px] font-medium hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800">{action}</button>
+        ))}
+      </div>
+      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+        {messages.map((message, index) => (
+          <div key={index} className={message.role === 'user' ? 'ml-8 rounded-xl bg-slate-900 p-3 text-xs whitespace-pre-wrap text-white dark:bg-white dark:text-slate-900' : 'mr-6 rounded-xl bg-slate-100 p-3 text-xs leading-5 whitespace-pre-wrap dark:bg-slate-900'}>{message.text}</div>
+        ))}
+      </div>
+      <div className="border-t border-slate-200 p-4 dark:border-slate-800">
+        <div className="flex items-end gap-2 rounded-xl border border-slate-200 p-2 dark:border-slate-700">
+          <textarea aria-label="Ask AI" value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); ask() } }} placeholder="Ask anything..." className="min-h-10 flex-1 resize-none bg-transparent p-1 text-xs outline-none" />
+          <button aria-label="Send AI prompt" onClick={() => ask()} className="rounded-lg bg-slate-900 p-2 text-white dark:bg-white dark:text-slate-900"><Send className="size-3.5" /></button>
+        </div>
+        {messages.length > 1 && onNavigate && (
+          <button
+            type="button"
+            onClick={() => onNavigate(lastNavigate)}
+            className="mt-3 w-full rounded-lg border border-slate-200 py-2 text-xs font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+          >
+            Open related workspace
+          </button>
+        )}
+      </div>
+    </aside>
+  )
+}
 
-export function CollaborationPanel({ notify }: { notify: Notify }) { const [comment, setComment] = useState(''); return <section className={`${panel} p-5`}><div className="mb-4 flex items-center gap-2"><MessageCircle className="size-4 text-indigo-600" /><h3 className="text-sm font-semibold">Team collaboration</h3><span className="ml-auto text-[10px] text-slate-400">3 watchers</span></div><div className="space-y-3"><div className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-800"><p className="font-semibold">Jordan Chen <span className="font-normal text-slate-400">2m ago</span></p><p className="mt-1 text-slate-600 dark:text-slate-300">@Ahmed the renewal looks ready for a final check.</p><div className="mt-2 flex gap-2 text-[11px] text-slate-400"><button onClick={() => notify('Reaction added')}>Like</button><button>Reply</button></div></div><div className="flex gap-2"><input aria-label="Add comment" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a comment or @mention" className="h-9 flex-1 rounded-lg border border-slate-200 bg-transparent px-3 text-xs dark:border-slate-700" /><button onClick={() => { if (comment) { notify('Comment added'); setComment('') } }} className="rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white">Post</button></div></div></section> }
+export { CollaborationPanel } from '@/features/workflows'
 
-export function NotificationsWorkspace({ notify }: { notify: Notify }) { const notifications = ['Jordan mentioned you on Enterprise renewal','Deal risk increased for Acme expansion','Import finished with 3 duplicate matches','Mia assigned you a follow-up task']; return <div className="p-5 lg:p-8"><div className="mb-6"><p className="text-xs font-medium text-indigo-600">Collaboration</p><h1 className="mt-1 text-2xl font-semibold">Notifications</h1><p className="mt-1 text-sm text-slate-500">Stay current on activity across your workspace.</p></div><div className={`${panel} divide-y divide-slate-100 dark:divide-slate-800`}>{notifications.map((item, index) => <button key={item} onClick={() => notify('Notification marked as read')} className="flex w-full items-center gap-3 p-4 text-left hover:bg-slate-50 dark:hover:bg-slate-800"><span className={`size-2 rounded-full ${index < 2 ? 'bg-indigo-500' : 'bg-slate-300'}`} /><Bell className="size-4 text-slate-400" /><span className="flex-1 text-sm">{item}</span><span className="text-xs text-slate-400">{index + 1}h</span></button>)}</div></div> }
+export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-5">
+      <div className={`${panel} w-full max-w-md p-6`} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Keyboard shortcuts</h2>
+          <button type="button" aria-label="Close shortcuts" onClick={onClose}>
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="mt-5 space-y-3 text-sm">
+          {[
+            ['⌘ J', 'Open AI assistant'],
+            ['⌘ K', 'Global search'],
+            ['?', 'Show shortcuts'],
+            ['G then D', 'Go to dashboard'],
+            ['N', 'Quick create'],
+          ].map(([key, label]) => (
+            <div key={key} className="flex items-center justify-between">
+              <span className="text-slate-500">{label}</span>
+              <kbd className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800">
+                {key}
+              </kbd>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
-export function GlobalSearchPage({ query, notify }: { query: string; notify: Notify }) { const groups = [{ name: 'People', items: ['Jordan Chen · VP Sales', 'Mia Kim · AE'] }, { name: 'Companies', items: ['Acme Corporation', 'Northstar Labs'] }, { name: 'Deals', items: ['Acme Expansion · $125k', 'Northstar renewal · $84k'] }]; return <div className="p-5 lg:p-8"><div className="mb-6 flex items-center gap-3"><Search className="size-5 text-indigo-600" /><div><p className="text-xs text-indigo-600">Global search</p><h1 className="text-2xl font-semibold">Results for “{query || 'all records'}”</h1></div></div><div className="mb-5 flex flex-wrap gap-2"><button className={`${button} border-indigo-300 text-indigo-600`}>All</button><button className={button}>People</button><button className={button}>Companies</button><button className={button}>Deals</button><button className={button}>Tasks</button></div><div className="grid gap-5 md:grid-cols-3">{groups.map((group) => <section key={group.name} className={`${panel} p-4`}><h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">{group.name}</h2>{group.items.map((item) => <button key={item} onClick={() => notify(`${item} opened`)} className="flex w-full items-center justify-between border-b border-slate-100 py-3 text-left text-sm last:border-0 dark:border-slate-800"><span>{item}</span><ChevronRight className="size-3 text-slate-400" /></button>)}</section>)}</div></div> }
-
-export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => void }) { if (!open) return null; return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-5"><div className={`${panel} w-full max-w-md p-6`} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Keyboard shortcuts</h2><button aria-label="Close shortcuts" onClick={onClose}><X className="size-4" /></button></div><div className="mt-5 space-y-3 text-sm">{[['⌘ J','Open AI assistant'],['⌘ K','Global search'],['?','Show shortcuts'],['G then D','Go to dashboard'],['N','Quick create']].map(([key, label]) => <div key={key} className="flex items-center justify-between"><span className="text-slate-500">{label}</span><kbd className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800">{key}</kbd></div>)}</div></div></div> }
-
-export function MobileTabBar({ onNavigate }: { onNavigate: (label: string) => void }) { return <nav aria-label="Mobile navigation" className="fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-slate-200 bg-white/95 p-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 lg:hidden">{[['Dashboard',Menu],['Inbox',MessageCircle],['Deals',Zap],['Tasks',Check],['More',Menu]].map(([label, Icon]) => <button key={String(label)} onClick={() => onNavigate(String(label))} className="flex min-w-14 flex-col items-center gap-1 rounded-lg p-1.5 text-[10px] text-slate-500"><Icon className="size-4" />{String(label)}</button>)}</nav> }
-
-export function MaintenanceBanner({ notify }: { notify: Notify }) { return <div className="flex items-center justify-center gap-2 bg-amber-100 px-4 py-2 text-xs font-medium text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"><Zap className="size-3.5" />Scheduled maintenance Sunday at 02:00 UTC.<button onClick={() => notify('Maintenance details opened')} className="underline">Details</button></div> }
+export function MobileTabBar({ onNavigate }: { onNavigate: (label: string) => void }) {
+  return (
+    <nav
+      aria-label="Mobile navigation"
+      className="fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-slate-200 bg-white/95 p-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 lg:hidden"
+    >
+      {(
+        [
+          ['Dashboard', Menu],
+          ['Inbox', MessageCircle],
+          ['Deals', Zap],
+          ['Tasks', Check],
+          ['More', Menu],
+        ] as const
+      ).map(([label, Icon]) => (
+        <button
+          key={label}
+          type="button"
+          onClick={() => onNavigate(label)}
+          className="flex min-w-14 flex-col items-center gap-1 rounded-lg p-1.5 text-[10px] text-slate-500"
+        >
+          <Icon className="size-4" />
+          {label}
+        </button>
+      ))}
+    </nav>
+  )
+}

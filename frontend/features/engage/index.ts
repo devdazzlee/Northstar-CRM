@@ -1,0 +1,7 @@
+export { InboxWorkspace } from './inbox-workspace'
+export { TemplatesWorkspace } from './templates-workspace'
+export { CampaignsWorkspace } from './campaigns-workspace'
+export { SequencesWorkspace } from './sequences-workspace'
+export { ActivitiesWorkspace } from './activities-workspace'
+export { CallingWorkspace } from './calling-workspace'
+export { FormsWorkspace } from './forms-workspace'

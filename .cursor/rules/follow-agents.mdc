@@ -1,0 +1,17 @@
+---
+description: Always follow AGENTS.md for scalable frontend/backend coding standards
+alwaysApply: true
+---
+
+# Follow AGENTS.md
+
+Before writing or changing code in this repository, follow **`AGENTS.md`** at the repo root.
+
+That file is mandatory for Cursor and Claude agents. It defines:
+
+- Scalable project structure (`features/`, `lib/`, `hooks/`, `stores/`)
+- React / Next.js best practices (DRY UI, hooks, React Query, RHF+Zod)
+- Backend layering (controller → service → repository)
+- TypeScript, testing, security, and definition of done
+
+Do not invent parallel patterns. Reuse shared modules. Keep diffs focused. Prefer small feature files over mega-files.

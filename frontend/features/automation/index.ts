@@ -1,0 +1,5 @@
+export { AutomationWorkspace } from './automation-workspace'
+export { AssignmentRulesWorkspace } from './assignment-rules-workspace'
+export { ScoringApprovalsWorkspace } from './scoring-approvals-workspace'
+export { AutomationAdminWorkspace } from './automation-admin-workspace'
+export { RunLogs } from './run-logs'
